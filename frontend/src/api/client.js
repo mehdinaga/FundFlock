@@ -1,9 +1,10 @@
 // frontend/src/api/client.js
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 
-// API Base URL - Change this to your backend URL
-const API_BASE_URL = 'http://10.100.156.223:3000/api/v1';
+// API Base URL - reads from .env file via app.config.js
+const API_BASE_URL = Constants.expoConfig?.extra?.apiUrl || 'http://localhost:3000/api/v1';
 
 // Create axios instance
 const apiClient = axios.create({

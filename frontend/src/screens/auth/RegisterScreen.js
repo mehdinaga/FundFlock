@@ -29,15 +29,19 @@ const RegisterScreen = ({ navigation }) => {
     const [errors, setErrors] = useState({});
 
     const getPasswordStrength = () => {
-        if (password.length === 0) return { strength: 0, label: '', color: '#E5E5E5' };
+        if (password.length === 0)
+            return { strength: 0, label: '', color: '#E5E5E5' };
         let strength = 0;
         if (password.length >= 8) strength += 25;
         if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength += 25;
         if (/\d/.test(password)) strength += 25;
         if (/[^a-zA-Z0-9]/.test(password)) strength += 25;
-        if (strength <= 25) return { strength, label: 'Weak', color: '#EF4444' };
-        if (strength <= 50) return { strength, label: 'Fair', color: '#F59E0B' };
-        if (strength <= 75) return { strength, label: 'Good', color: '#10B981' };
+        if (strength <= 25)
+            return { strength, label: 'Weak', color: '#EF4444' };
+        if (strength <= 50)
+            return { strength, label: 'Fair', color: '#F59E0B' };
+        if (strength <= 75)
+            return { strength, label: 'Good', color: '#10B981' };
         return { strength, label: 'Strong', color: '#10B981' };
     };
 
