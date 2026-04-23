@@ -42,6 +42,25 @@ const userSchema = new mongoose.Schema({
         type: Date,
         default: null
     },
+    // Stripe: customer id used when *paying* (holds saved payment methods)
+    stripeCustomerId: {
+        type: String,
+        default: null,
+        index: true
+    },
+    // Stripe Connect: Express connected account id used when *receiving*
+    stripeAccountId: {
+        type: String,
+        default: null,
+        index: true
+    },
+    // Cached status flags from Stripe (refreshed via webhook + onboarding returns)
+    stripeAccountStatus: {
+        chargesEnabled: { type: Boolean, default: false },
+        payoutsEnabled: { type: Boolean, default: false },
+        detailsSubmitted: { type: Boolean, default: false },
+        updatedAt: { type: Date, default: null }
+    },
     resetPasswordToken: String,
     resetPasswordExpire: Date,
     createdAt: {

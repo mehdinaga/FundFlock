@@ -12,8 +12,10 @@ const {
     changePassword,
     deleteAccount,
     updateProfile,
+    uploadAvatar,
     getMe
 } = require('../controllers/authController');
+const upload = require('../middlewares/upload');
 
 // Validation rules
 const registerValidation = [
@@ -98,6 +100,7 @@ router.post('/reset-password', resetPasswordValidation, validate, resetPassword)
 router.put('/change-password', protect, changePasswordValidation, validate, changePassword);
 router.delete('/delete-account', protect, deleteAccount);
 router.put('/update-profile', protect, updateProfile);
+router.post('/upload-avatar', protect, upload.single('avatar'), uploadAvatar);
 router.get('/me', protect, getMe);
 
 module.exports = router;

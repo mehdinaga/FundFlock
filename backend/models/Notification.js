@@ -17,7 +17,15 @@ const notificationSchema = new mongoose.Schema({
             'expense_updated',
             'expense_deleted',
             'friend_request',
-            'friend_accepted'
+            'friend_accepted',
+            // Settlement / Stripe flow
+            'settlement_received',
+            'settlement_sent',
+            'settlement_failed',
+            'settlement_refunded',
+            // Stripe Connect onboarding
+            'payout_account_ready',
+            'payout_account_issue'
         ],
         required: true
     },
@@ -47,6 +55,14 @@ const notificationSchema = new mongoose.Schema({
         fromUserId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User'
+        },
+        friendshipId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Friendship'
+        },
+        settlementId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Settlement'
         }
     },
     isRead: {

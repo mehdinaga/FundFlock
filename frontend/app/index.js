@@ -1,11 +1,19 @@
 // app/index.js - Expo Router entry point
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '../src/context/AuthContext';
-import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, TextInput, ScrollView, KeyboardAvoidingView, Platform, Alert, Image } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, TextInput, ScrollView, KeyboardAvoidingView, Platform, Alert, Image, SafeAreaView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { login as apiLogin, register as apiRegister, forgotPassword as apiForgotPassword, resetPassword as apiResetPassword, changePassword as apiChangePassword, deleteAccount as apiDeleteAccount, updateProfile as apiUpdateProfile } from '../src/api/auth';
+import * as Linking from 'expo-linking';
+import Constants from 'expo-constants';
+import { StripeProvider } from '@stripe/stripe-react-native';
+import { login as apiLogin, register as apiRegister, forgotPassword as apiForgotPassword, resetPassword as apiResetPassword, changePassword as apiChangePassword, deleteAccount as apiDeleteAccount, updateProfile as apiUpdateProfile, uploadAvatar as apiUploadAvatar } from '../src/api/auth';
+import { acceptInvite } from '../src/api/friends';
+import { getUnreadCount } from '../src/api/notifications';
+import ExpensesScreen from '../src/screens/expenses/ExpensesScreen';
+import GroupsScreen from '../src/screens/groups/GroupsScreen';
+import DashboardScreen from '../src/screens/dashboard/DashboardScreen';
 
 // Login Screen Component
 const LoginScreen = ({ onSwitchToRegister, onSwitchToForgotPassword }) => {
@@ -567,47 +575,58 @@ const ForgotPasswordScreen = ({ onSwitchToLogin }) => {
 };
 
 // Dashboard Screen
-const DashboardScreen = () => {
-    return (
-        <View style={styles.blankScreenContainer}>
-            <View style={styles.blankScreenHeader}>
-                <Text style={styles.screenTitle}>Dashboard</Text>
-            </View>
-        </View>
-    );
-};
-
-// Groups Screen (Blank - Coming Soon)
-const GroupsScreen = () => {
-    return (
-        <View style={styles.blankScreenContainer}>
-            <View style={styles.blankScreenHeader}>
-                <Text style={styles.screenTitle}>Groups</Text>
-            </View>
-        </View>
-    );
-};
-
-// Expenses Screen (Blank - Coming Soon)
-const ExpensesScreen = () => {
-    return (
-        <View style={styles.blankScreenContainer}>
-            <View style={styles.blankScreenHeader}>
-                <Text style={styles.screenTitle}>Expenses</Text>
-            </View>
-        </View>
-    );
-};
+// DashboardScreen, GroupsScreen and ExpensesScreen are imported from src/screens/ at the top.
 
 // Friends Screen (Blank - Coming Soon)
 const FriendsScreen = () => {
-    return (
-        <View style={styles.blankScreenContainer}>
-            <View style={styles.blankScreenHeader}>
-                <Text style={styles.screenTitle}>Friends</Text>
-            </View>
-        </View>
-    );
+    const [screen, setScreen] = useState('FriendsList');
+    const [screenParams, setScreenParams] = useState({});
+    const [history, setHistory] = useState([]);
+
+    // Create a navigation-like object for child screens
+    const navigation = {
+        navigate: (name, params = {}) => {
+            setHistory(prev => [...prev, { screen, params: screenParams }]);
+            setScreen(name);
+            setScreenParams(params);
+        },
+        goBack: () => {
+            if (history.length > 0) {
+                const prev = history[history.length - 1];
+                setHistory(h => h.slice(0, -1));
+                setScreen(prev.screen);
+                setScreenParams(prev.params);
+            }
+        },
+    };
+
+    const route = { params: screenParams };
+
+    // Lazy imports from src/screens/friends
+    const FriendsListScreen = require('../src/screens/friends/FriendsListScreen').default;
+    const AddFriendScreen = require('../src/screens/friends/AddFriendScreen').default;
+    const FriendDetailScreen = require('../src/screens/friends/FriendDetailScreen').default;
+    const PendingRequestsScreen = require('../src/screens/friends/PendingRequestsScreen').default;
+    const QRInviteScreen = require('../src/screens/friends/QRInviteScreen').default;
+    const SettleUpScreen = require('../src/screens/payments/SettleUpScreen').default;
+    const WalletSetupScreen = require('../src/screens/payments/WalletSetupScreen').default;
+
+    switch (screen) {
+        case 'AddFriend':
+            return <AddFriendScreen navigation={navigation} route={route} />;
+        case 'FriendDetail':
+            return <FriendDetailScreen navigation={navigation} route={route} />;
+        case 'PendingRequests':
+            return <PendingRequestsScreen navigation={navigation} route={route} />;
+        case 'QRInvite':
+            return <QRInviteScreen navigation={navigation} route={route} />;
+        case 'SettleUp':
+            return <SettleUpScreen navigation={navigation} route={route} />;
+        case 'WalletSetup':
+            return <WalletSetupScreen navigation={navigation} route={route} />;
+        default:
+            return <FriendsListScreen navigation={navigation} route={route} />;
+    }
 };
 
 // Country codes data
@@ -663,10 +682,11 @@ const EditProfileScreen = ({ onBack, profileImage, onImageChange }) => {
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
             aspect: [1, 1],
-            quality: 0.8,
+            quality: 0.7,
         });
 
         if (!result.canceled && result.assets[0]) {
+            // Local URI for preview; the actual upload happens on Save.
             onImageChange(result.assets[0].uri);
         }
     };
@@ -701,12 +721,24 @@ const EditProfileScreen = ({ onBack, profileImage, onImageChange }) => {
                 setEditingField(null);
             }
 
-            // Update profile (fullName, email, avatar)
+            // If the user picked a new image (local file URI), upload it first.
+            // Firebase Storage returns a permanent URL that other users can load.
+            const isLocalFile = profileImage && /^(file:|content:|ph:|assets-library:)/.test(profileImage);
+            if (isLocalFile) {
+                const uploadRes = await apiUploadAvatar(profileImage);
+                if (uploadRes?.data) {
+                    updateUser(uploadRes.data);
+                }
+            }
+
+            // Update profile (fullName, email, and clear avatar if removed)
             const profileData = {
                 fullName: fullName.trim(),
                 email: email.trim(),
-                avatar: profileImage || null
             };
+            if (profileImage === null) {
+                profileData.avatar = null;
+            }
 
             const response = await apiUpdateProfile(profileData);
 
@@ -774,7 +806,8 @@ const EditProfileScreen = ({ onBack, profileImage, onImageChange }) => {
     };
 
     return (
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.editProfileContainer}>
+        <SafeAreaView style={styles.editProfileContainer}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
             <View style={styles.editProfileHeaderFixed}>
                 <TouchableOpacity onPress={onBack} style={styles.editProfileBackButton}>
                     <Ionicons name="arrow-back" size={24} color="#171717" />
@@ -1000,12 +1033,22 @@ const EditProfileScreen = ({ onBack, profileImage, onImageChange }) => {
                 )}
             </ScrollView>
         </KeyboardAvoidingView>
+        </SafeAreaView>
     );
 };
 
 // Profile Screen
-const ProfileScreen = ({ onEditProfile, profileImage }) => {
+const ProfileScreen = ({
+    onEditProfile,
+    onOpenWallet,
+    onOpenNotifications,
+    onOpenReceipts,
+    profileImage,
+    unreadCount = 0,
+}) => {
     const { user, logout } = useAuth();
+    const [showEmailSheet, setShowEmailSheet] = useState(false);
+    const EmailAppSheet = require('../src/components/EmailAppSheet').default;
     return (
         <ScrollView style={styles.screenContainer}>
             <View style={styles.profileHeader}>
@@ -1025,17 +1068,29 @@ const ProfileScreen = ({ onEditProfile, profileImage }) => {
                     <Text style={styles.profileMenuText}>Edit Profile</Text>
                     <Ionicons name="chevron-forward" size={20} color="#A3A3A3" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.profileMenuItem}>
+                <TouchableOpacity style={styles.profileMenuItem} onPress={onOpenNotifications}>
                     <Ionicons name="notifications-outline" size={22} color="#525252" />
                     <Text style={styles.profileMenuText}>Notifications</Text>
+                    {unreadCount > 0 && (
+                        <View style={styles.menuBadge}>
+                            <Text style={styles.menuBadgeText}>
+                                {unreadCount > 99 ? '99+' : unreadCount}
+                            </Text>
+                        </View>
+                    )}
                     <Ionicons name="chevron-forward" size={20} color="#A3A3A3" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.profileMenuItem}>
-                    <Ionicons name="card-outline" size={22} color="#525252" />
-                    <Text style={styles.profileMenuText}>Payment Methods</Text>
+                <TouchableOpacity style={styles.profileMenuItem} onPress={onOpenReceipts}>
+                    <Ionicons name="receipt-outline" size={22} color="#525252" />
+                    <Text style={styles.profileMenuText}>Receipts</Text>
                     <Ionicons name="chevron-forward" size={20} color="#A3A3A3" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.profileMenuItem}>
+                <TouchableOpacity style={styles.profileMenuItem} onPress={onOpenWallet}>
+                    <Ionicons name="wallet-outline" size={22} color="#525252" />
+                    <Text style={styles.profileMenuText}>Wallet & Payouts</Text>
+                    <Ionicons name="chevron-forward" size={20} color="#A3A3A3" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.profileMenuItem} onPress={() => setShowEmailSheet(true)}>
                     <Ionicons name="help-circle-outline" size={22} color="#525252" />
                     <Text style={styles.profileMenuText}>Help & Support</Text>
                     <Ionicons name="chevron-forward" size={20} color="#A3A3A3" />
@@ -1050,6 +1105,14 @@ const ProfileScreen = ({ onEditProfile, profileImage }) => {
                 <Ionicons name="log-out-outline" size={20} color="#FFFFFF" />
                 <Text style={styles.logoutText}>Logout</Text>
             </TouchableOpacity>
+
+            <EmailAppSheet
+                visible={showEmailSheet}
+                onClose={() => setShowEmailSheet(false)}
+                to="support@fundflock.com"
+                subject="FundFlock Support"
+                body={`\n\n\n--- Account info ---\nName: ${user?.fullName || ''}\nEmail: ${user?.email || ''}`}
+            />
         </ScrollView>
     );
 };
@@ -1058,7 +1121,84 @@ const ProfileScreen = ({ onEditProfile, profileImage }) => {
 const MainApp = () => {
     const [activeTab, setActiveTab] = useState('dashboard');
     const [showEditProfile, setShowEditProfile] = useState(false);
-    const [profileImage, setProfileImage] = useState(null);
+    const [showWallet, setShowWallet] = useState(false);
+    const [showNotifications, setShowNotifications] = useState(false);
+    const [showReceipts, setShowReceipts] = useState(false);
+    const [settleTarget, setSettleTarget] = useState(null); // { friend, maxAmount } | null
+    const [unreadCount, setUnreadCount] = useState(0);
+    const { user } = useAuth();
+    const [profileImage, setProfileImage] = useState(user?.avatar || null);
+
+    // Lightweight poll of the unread count so the badge is roughly live
+    // without needing websockets. 30s is a decent sweet spot for a splitting
+    // app — not so fast as to hammer the API, not so slow as to feel stale.
+    const refreshUnread = useCallback(async () => {
+        try {
+            const res = await getUnreadCount();
+            const n = Number(res?.data?.count ?? 0);
+            setUnreadCount(Number.isFinite(n) ? n : 0);
+        } catch {
+            // stay silent — we don't want to surface network blips here
+        }
+    }, []);
+
+    useEffect(() => {
+        refreshUnread();
+        const id = setInterval(refreshUnread, 30000);
+        return () => clearInterval(id);
+    }, [refreshUnread]);
+
+    const openSettle = useCallback((friend, maxAmount) => {
+        if (!friend) return;
+        setSettleTarget({ friend, maxAmount: Number(maxAmount) || 0 });
+    }, []);
+
+    // Keep profileImage in sync with the authenticated user's avatar
+    // so it survives sign-out / sign-in and profile updates.
+    useEffect(() => {
+        setProfileImage(user?.avatar || null);
+    }, [user?.avatar]);
+
+    // Deep link handler for invite links
+    const handleDeepLink = useCallback(async (url) => {
+        if (!url) return;
+        // Match any URL format: fundflock://invite/{id}, exp://...--/invite/{id}, etc.
+        const match = url.match(/\/invite\/([a-fA-F0-9]{24})/);
+        if (!match) return;
+
+        const inviterId = match[1];
+
+        if (inviterId === user?._id) {
+            Alert.alert('Oops', 'You cannot add yourself as a friend!');
+            return;
+        }
+
+        try {
+            const result = await acceptInvite(inviterId);
+            if (result.success) {
+                Alert.alert('Success!', result.message || 'You are now friends!', [
+                    { text: 'OK', onPress: () => setActiveTab('friends') }
+                ]);
+            }
+        } catch (error) {
+            const msg = error?.error?.message || 'Failed to process invite';
+            Alert.alert('Invite Error', msg);
+        }
+    }, [user]);
+
+    useEffect(() => {
+        // Handle link that opened the app
+        Linking.getInitialURL().then((url) => {
+            if (url) handleDeepLink(url);
+        });
+
+        // Handle links while app is open
+        const subscription = Linking.addEventListener('url', (event) => {
+            handleDeepLink(event.url);
+        });
+
+        return () => subscription?.remove();
+    }, [handleDeepLink]);
 
     if (showEditProfile) {
         return (
@@ -1070,13 +1210,73 @@ const MainApp = () => {
         );
     }
 
+    if (showWallet) {
+        const WalletSetupScreen = require('../src/screens/payments/WalletSetupScreen').default;
+        return (
+            <WalletSetupScreen
+                navigation={{ goBack: () => setShowWallet(false) }}
+            />
+        );
+    }
+
+    if (settleTarget) {
+        const SettleUpScreen = require('../src/screens/payments/SettleUpScreen').default;
+        return (
+            <SettleUpScreen
+                navigation={{ goBack: () => setSettleTarget(null) }}
+                route={{ params: settleTarget }}
+            />
+        );
+    }
+
+    if (showNotifications) {
+        const NotificationsScreen = require('../src/screens/notifications/NotificationsScreen').default;
+        return (
+            <NotificationsScreen
+                navigation={{
+                    goBack: () => {
+                        setShowNotifications(false);
+                        // Re-sync the badge when the user leaves the screen —
+                        // they probably opened some items.
+                        refreshUnread();
+                    },
+                }}
+            />
+        );
+    }
+
+    if (showReceipts) {
+        const ReceiptsScreen = require('../src/screens/receipts/ReceiptsScreen').default;
+        return (
+            <ReceiptsScreen
+                navigation={{ goBack: () => setShowReceipts(false) }}
+            />
+        );
+    }
+
     const renderScreen = () => {
         switch (activeTab) {
-            case 'dashboard': return <DashboardScreen />;
+            case 'dashboard':
+                return (
+                    <DashboardScreen
+                        onOpenNotifications={() => setShowNotifications(true)}
+                        unreadCount={unreadCount}
+                    />
+                );
             case 'groups': return <GroupsScreen />;
-            case 'expenses': return <ExpensesScreen />;
+            case 'expenses': return <ExpensesScreen onOpenSettle={openSettle} />;
             case 'friends': return <FriendsScreen />;
-            case 'profile': return <ProfileScreen onEditProfile={() => setShowEditProfile(true)} profileImage={profileImage} />;
+            case 'profile':
+                return (
+                    <ProfileScreen
+                        onEditProfile={() => setShowEditProfile(true)}
+                        onOpenWallet={() => setShowWallet(true)}
+                        onOpenNotifications={() => setShowNotifications(true)}
+                        onOpenReceipts={() => setShowReceipts(true)}
+                        profileImage={profileImage}
+                        unreadCount={unreadCount}
+                    />
+                );
             default: return <DashboardScreen />;
         }
     };
@@ -1146,11 +1346,18 @@ const AppContent = () => {
 
 // Main Page component
 export default function Page() {
+    const publishableKey = Constants.expoConfig?.extra?.stripePublishableKey || '';
     return (
-        <AuthProvider>
-            <StatusBar style="dark" />
-            <AppContent />
-        </AuthProvider>
+        <StripeProvider
+            publishableKey={publishableKey}
+            merchantIdentifier="merchant.com.fundflock"
+            urlScheme="fundflock"
+        >
+            <AuthProvider>
+                <StatusBar style="dark" />
+                <AppContent />
+            </AuthProvider>
+        </StripeProvider>
     );
 }
 
@@ -1234,6 +1441,8 @@ const styles = StyleSheet.create({
     profileMenu: { backgroundColor: '#FFFFFF', marginTop: 20, paddingVertical: 8 },
     profileMenuItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
     profileMenuText: { flex: 1, fontSize: 16, color: '#171717', marginLeft: 16 },
+    menuBadge: { minWidth: 22, height: 22, borderRadius: 11, backgroundColor: '#F97316', paddingHorizontal: 7, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+    menuBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
     // Tab Bar
     tabBar: { flexDirection: 'row', backgroundColor: '#FFFFFF', paddingBottom: 30, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E5E5E5' },
     tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -1243,14 +1452,14 @@ const styles = StyleSheet.create({
     tabLabelActive: { color: '#F97316', fontWeight: '600' },
     // Blank Screens
     blankScreenContainer: { flex: 1, backgroundColor: '#FFFFFF' },
-    blankScreenHeader: { paddingHorizontal: 20, paddingTop: 40, paddingBottom: 20, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
+    blankScreenHeader: { paddingHorizontal: 24, paddingVertical: 16, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
     // Profile Avatar Image
     profileAvatar: { width: 80, height: 80, borderRadius: 40, marginBottom: 16 },
     // Edit Profile Styles
     editProfileContainer: { flex: 1, backgroundColor: '#FFFFFF' },
-    editProfileHeaderFixed: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F5F5F5', backgroundColor: '#FFFFFF' },
+    editProfileHeaderFixed: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#F5F5F5', backgroundColor: '#FFFFFF' },
     editProfileBackButton: { padding: 8 },
-    editProfileTitle: { fontSize: 18, fontWeight: '600', color: '#171717' },
+    editProfileTitle: { fontSize: 28, fontWeight: '700', color: '#171717' },
     editProfileContent: { flex: 1, padding: 20 },
     editProfileImageSection: { alignItems: 'center', marginBottom: 24 },
     editProfileImageContainer: { position: 'relative' },

@@ -3,6 +3,7 @@ const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const sendEmail = require('../utils/sendEmail');
+const { getBucket } = require('../config/firebase');
 
 // Generate JWT Token
 const generateToken = (userId) => {
@@ -480,6 +481,62 @@ const getMe = async (req, res, next) => {
     }
 };
 
+// @desc    Upload avatar to Firebase Storage
+// @route   POST /api/v1/auth/upload-avatar
+// @access  Private
+const uploadAvatar = async (req, res, next) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'NO_FILE', message: 'No image file provided' }
+            });
+        }
+
+        const user = await User.findById(req.user.id);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                error: { code: 'NOT_FOUND', message: 'User not found' }
+            });
+        }
+
+        const bucket = getBucket();
+        const ext = (req.file.mimetype.split('/')[1] || 'jpg').toLowerCase();
+        const filename = `avatars/${user._id}-${Date.now()}.${ext}`;
+        const token = crypto.randomUUID();
+
+        const file = bucket.file(filename);
+        await file.save(req.file.buffer, {
+            metadata: {
+                contentType: req.file.mimetype,
+                metadata: { firebaseStorageDownloadTokens: token }
+            },
+            resumable: false
+        });
+
+        const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(filename)}?alt=media&token=${token}`;
+
+        user.avatar = publicUrl;
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            data: {
+                _id: user._id,
+                fullName: user.fullName,
+                email: user.email,
+                avatar: user.avatar,
+                createdAt: user.createdAt
+            },
+            message: 'Avatar uploaded successfully'
+        });
+    } catch (error) {
+        console.error('Upload avatar error:', error);
+        next(error);
+    }
+};
+
 module.exports = {
     register,
     login,
@@ -488,5 +545,6 @@ module.exports = {
     changePassword,
     deleteAccount,
     updateProfile,
+    uploadAvatar,
     getMe
 };

@@ -3,8 +3,41 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
-// API Base URL - reads from .env file via app.config.js
-const API_BASE_URL = Constants.expoConfig?.extra?.apiUrl || 'http://localhost:3000/api/v1';
+// Resolve the API base URL automatically.
+// Priority:
+//   1. API_URL from .env (if set AND not "auto"/localhost — for prod / remote servers)
+//   2. Auto-detect the dev machine's LAN IP from Expo's Metro bundler host
+//      (works on any WiFi, no need to edit .env each time)
+//   3. Fallback to localhost
+const API_PORT = 3000;
+const API_PATH = '/api/v1';
+
+function resolveApiBaseUrl() {
+    const envUrl = Constants.expoConfig?.extra?.apiUrl;
+
+    // If user explicitly set a real URL (not localhost, not "auto"), use it
+    if (envUrl && envUrl !== 'auto' && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+        return envUrl;
+    }
+
+    // Auto-detect: grab the IP Expo/Metro is running on — that's the dev machine
+    const hostUri =
+        Constants.expoConfig?.hostUri ||
+        Constants.expoGoConfig?.debuggerHost ||
+        Constants.manifest?.debuggerHost ||
+        Constants.manifest2?.extra?.expoClient?.hostUri ||
+        Constants.manifest?.hostUri;
+
+    if (hostUri) {
+        const host = hostUri.split(':')[0];
+        return `http://${host}:${API_PORT}${API_PATH}`;
+    }
+
+    return envUrl || `http://localhost:${API_PORT}${API_PATH}`;
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
+console.log('[API] Base URL:', API_BASE_URL);
 
 // Create axios instance
 const apiClient = axios.create({
