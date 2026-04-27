@@ -2239,7 +2239,7 @@ const ExpensesScreen = ({ onOpenSettle }) => {
 
         // --- Applied settlements ---
         (settlements || [])
-            .filter((s) => s.status === 'succeeded')
+            .filter((s) => s.status === 'succeeded' || s.status === 'processing')
             .forEach((s) => {
                 const payerId = s.payer?._id?.toString?.() || s.payer?.toString?.() || '';
                 const recipientId = s.recipient?._id?.toString?.() || s.recipient?.toString?.() || '';
@@ -2313,7 +2313,7 @@ const ExpensesScreen = ({ onOpenSettle }) => {
         });
 
         (settlements || [])
-            .filter((s) => s.status === 'succeeded')
+            .filter((s) => s.status === 'succeeded' || s.status === 'processing')
             .forEach((s) => {
                 const pId = s.payer?._id?.toString?.() || s.payer?.toString?.() || '';
                 const rId = s.recipient?._id?.toString?.() || s.recipient?.toString?.() || '';
@@ -2517,7 +2517,7 @@ const ExpensesScreen = ({ onOpenSettle }) => {
             <View style={listStyles.header}>
                 <Text style={listStyles.headerTitle}>Expenses</Text>
                 <View style={listStyles.headerActions}>
-                    {grossOwed > 0.004 && (
+                    {totalOwed > 0.004 && (
                         <TouchableOpacity
                             style={listStyles.payHeaderBtn}
                             onPress={() => setShowPayPicker(true)}
@@ -2525,7 +2525,7 @@ const ExpensesScreen = ({ onOpenSettle }) => {
                         >
                             <Ionicons name="card-outline" size={15} color="#FFF" />
                             <Text style={listStyles.payHeaderBtnText}>
-                                Pay {formatAmount(grossOwed)}
+                                Pay {formatAmount(totalOwed)}
                             </Text>
                         </TouchableOpacity>
                     )}
@@ -2538,12 +2538,12 @@ const ExpensesScreen = ({ onOpenSettle }) => {
             <View style={listStyles.summaryRow}>
                 <View style={listStyles.summaryCard}>
                     <Text style={listStyles.summaryLabel}>You are owed</Text>
-                    <Text style={[listStyles.summaryAmount, listStyles.lentColor]}>{formatAmount(grossLent)}</Text>
+                    <Text style={[listStyles.summaryAmount, listStyles.lentColor]}>{formatAmount(totalLent)}</Text>
                 </View>
                 <View style={listStyles.summaryDivider} />
                 <View style={listStyles.summaryCard}>
                     <Text style={listStyles.summaryLabel}>You owe</Text>
-                    <Text style={[listStyles.summaryAmount, listStyles.owedColor]}>{formatAmount(grossOwed)}</Text>
+                    <Text style={[listStyles.summaryAmount, listStyles.owedColor]}>{formatAmount(totalOwed)}</Text>
                 </View>
             </View>
 
@@ -2620,14 +2620,14 @@ const ExpensesScreen = ({ onOpenSettle }) => {
                         <View style={listStyles.paySheetHandle} />
                         <Text style={listStyles.paySheetTitle}>Settle up</Text>
                         <Text style={listStyles.paySheetSubtitle}>
-                            You owe a total of {formatAmount(grossOwed)}. Select a person to pay.
+                            You owe a total of {formatAmount(totalOwed)}. Select a person to pay.
                         </Text>
 
                         <ScrollView style={{ marginTop: 8 }}>
-                            {grossDebtsByPerson.length === 0 ? (
+                            {debtsByPerson.length === 0 ? (
                                 <Text style={listStyles.paySheetEmpty}>You're all settled up.</Text>
                             ) : (
-                                grossDebtsByPerson.map((d) => (
+                                debtsByPerson.map((d) => (
                                     <TouchableOpacity
                                         key={d.friend._id}
                                         style={listStyles.payPersonRow}

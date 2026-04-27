@@ -974,28 +974,39 @@ const DashboardScreen = ({ onOpenNotifications, unreadCount = 0 }) => {
             }
         }
 
-        // "Outstanding" = what you still owe across all expenses minus
-        // settlements you've sent. Rough but useful at a glance.
-        let grossOwed = 0;
-        let grossOwing = 0; // what others owe you
+        // Compute net balance per counterparty (same logic as ExpensesScreen).
+        // This prevents a payment to one friend from zeroing out debts to others.
+        const netPerPerson = {}; // friendId -> net dollars (positive = they owe me, negative = I owe them)
+        const bump = (id, delta) => { netPerPerson[id] = (netPerPerson[id] || 0) + delta; };
+
         for (const e of expenses) {
-            if (!isMemberOf(e, myId)) continue;
             const payerId = e.paidBy?._id?.toString?.() || e.paidBy?.toString?.() || '';
             if (!payerId) continue;
-            const myShare = userShareForExpense(e, myId);
-            if (payerId === myId) {
-                // Others owe us their shares
-                for (const sp of e.splits || []) {
-                    const sid = sp.user?._id?.toString?.() || sp.user?.toString?.() || '';
-                    if (sid && sid !== myId) grossOwing += Number(sp.amount) || 0;
-                }
-            } else {
-                grossOwed += myShare;
+            for (const sp of e.splits || []) {
+                const uid = sp.user?._id?.toString?.() || sp.user?.toString?.() || '';
+                if (!uid) continue;
+                const share = Number(sp.amount) || 0;
+                if (payerId === myId && uid !== myId) bump(uid, +share);
+                else if (uid === myId && payerId !== myId) bump(payerId, -share);
             }
         }
+        for (const s of settlements) {
+            if (s.status !== 'succeeded' && s.status !== 'processing') continue;
+            const pId = s.payer?._id?.toString?.() || s.payer?.toString?.() || '';
+            const rId = s.recipient?._id?.toString?.() || s.recipient?.toString?.() || '';
+            const dollars = (s.amount || 0) / 100;
+            if (pId === myId && rId) bump(rId, +dollars);
+            else if (rId === myId && pId) bump(pId, -dollars);
+        }
 
-        const outstandingOwed = Math.max(0, grossOwed - settledSent);
-        const outstandingOwing = Math.max(0, grossOwing - settledReceived);
+        let outstandingOwed = 0;
+        let outstandingOwing = 0;
+        for (const v of Object.values(netPerPerson)) {
+            if (v < -0.004) outstandingOwed += -v;
+            else if (v > 0.004) outstandingOwing += v;
+        }
+        outstandingOwed = Math.round(outstandingOwed * 100) / 100;
+        outstandingOwing = Math.round(outstandingOwing * 100) / 100;
 
         return {
             settledSent,
