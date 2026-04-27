@@ -8,27 +8,6 @@ Frontend: React Native, Expo SDK 54, Expo Router, Axios, AsyncStorage
 
 Backend: Node.js, Express, MongoDB (Mongoose), JWT, Stripe, Firebase, Nodemailer
 
-FundFlock/
-├── backend/
-│   ├── config/          # DB, Firebase, Stripe configuration
-│   ├── controllers/     # Route handlers (auth, etc.)
-│   ├── middlewares/      # Auth, validation, error handling
-│   ├── models/           # Mongoose models (User, Group, Expense, etc.)
-│   ├── routes/           # Express route definitions
-│   ├── utils/            # Helpers (email, token, balance calc)
-│   ├── server.js         # Entry point
-│   ├── .env.example      # Environment variables template
-│   └── package.json
-├── frontend/
-    ├── app/              # Expo Router screens
-    ├── src/
-    │   ├── api/          # Axios client & API functions
-    │   ├── components/   # Reusable UI components
-    │   ├── context/      # React Context (AuthContext)
-    │   ├── navigation/   # Navigation setup
-    │   ├── screens/      # Screen components
-    │   └── utils/        # Helpers (formatters, validators)
-    └── package.json
 
 Prerequisites:
 
